@@ -296,13 +296,11 @@ bool Node::ProcessMicroBlockConsensusCore(
       // To DS -> ProcessMicroBlock
       DataSender::GetInstance().SendDataToOthers(
           *m_microblock, *m_myShardMembers, ds_shards, t_blocks,
-          m_mediator.m_lookup->GetLookupNodes(),
           m_mediator.m_txBlockChain.GetLastBlock().GetBlockHash(),
           m_consensusMyID, composeMicroBlockMessageForSender, false, nullptr);
       // To Lookup -> ProcessMBnForwardTxn
       DataSender::GetInstance().SendDataToOthers(
           *m_microblock, *m_myShardMembers, {}, {},
-          m_mediator.m_lookup->GetLookupNodes(),
           m_mediator.m_txBlockChain.GetLastBlock().GetBlockHash(),
           m_consensusMyID, composeMBnForwardTxnMessageForSender, false,
           SendDataToLookupFuncDefault, sendMbnFowardTxnToShardNodes);

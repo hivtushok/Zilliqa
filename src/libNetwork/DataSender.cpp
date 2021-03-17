@@ -21,13 +21,13 @@
 #include "libNetwork/Blacklist.h"
 #include "libNetwork/P2PComm.h"
 #include "libUtils/DataConversion.h"
+#include "libUtils/DnsUtils.h"
 #include "libUtils/IPConverter.h"
 #include "libUtils/Logger.h"
 
 using namespace std;
 
-void SendDataToLookupNodesDefault(const VectorOfNode& lookups,
-                                  const bytes& message) {
+void SendDataToLookupNodesDefault(const bytes& message) {
   if (LOOKUP_NODE_MODE) {
     LOG_GENERAL(WARNING,
                 "DataSender::SendDataToLookupNodesDefault not "
@@ -35,29 +35,28 @@ void SendDataToLookupNodesDefault(const VectorOfNode& lookups,
   }
   LOG_MARKER();
 
-  vector<Peer> allLookupNodes;
-
-  for (const auto& node : lookups) {
-    string url = node.second.GetHostname();
-    auto resolved_ip = node.second.GetIpAddress();  // existing one
-    if (!url.empty()) {
-      uint128_t tmpIp;
-      if (IPConverter::ResolveDNS(url, node.second.GetListenPortHost(),
-                                  tmpIp)) {
-        resolved_ip = tmpIp;  // resolved one
-      } else {
-        LOG_GENERAL(WARNING, "Unable to resolve DNS for " << url);
-      }
-    }
-
-    Blacklist::GetInstance().Whitelist(
-        resolved_ip);  // exclude this lookup ip from blacklisting
-    Peer tmp(resolved_ip, node.second.GetListenPortHost());
-    LOG_GENERAL(INFO, "Sending to lookup " << tmp);
-
-    allLookupNodes.emplace_back(tmp);
+  vector<string> ipList;
+  if (!ObtainIpListFromDns(ipList, LOOKUPS_DNS)) {
+    LOG_GENERAL(WARNING, "Unable to obtain IPs from DNS " << LOOKUPS_DNS);
+    return;
   }
 
+  // Add on with multipliers IP
+  if (!ObtainIpListFromDns(ipList, MULTIPLIER_DNS)) {
+    LOG_GENERAL(WARNING, "Unable to obtain IPs from DNS " << MULTIPLIER_DNS);
+    return;
+  }
+
+  vector<Peer> allLookupNodes;
+  for (const auto& ipStr : ipList) {
+    auto ip = ConvertIpStringToUint128(ipStr);
+
+    Blacklist::GetInstance().Whitelist(
+        ip);  // exclude this lookup ip from blacklisting
+    Peer tmp{ip, DEFAULT_SEED_PORT};
+    LOG_GENERAL(INFO, "Sending to lookup " << tmp);
+    allLookupNodes.emplace_back(tmp);
+  }
   P2PComm::GetInstance().SendBroadcastMessage(allLookupNodes, message);
 }
 
@@ -83,8 +82,8 @@ void SendDataToShardNodesDefault(
 }
 
 SendDataToLookupFunc SendDataToLookupFuncDefault =
-    [](const VectorOfNode& lookups, const bytes& message) mutable -> void {
-  SendDataToLookupNodesDefault(lookups, message);
+    [](const bytes& message) mutable -> void {
+  SendDataToLookupNodesDefault(message);
 };
 
 DataSender::DataSender() {}
@@ -234,8 +233,7 @@ bool DataSender::SendDataToOthers(
     const BlockBase& blockwcosigSender, const DequeOfNode& sendercommittee,
     const DequeOfShard& shards,
     const std::unordered_map<uint32_t, BlockBase>& blockswcosigRecver,
-    const VectorOfNode& lookups, const BlockHash& hashForRandom,
-    const uint16_t& consensusMyId,
+    const BlockHash& hashForRandom, const uint16_t& consensusMyId,
     const ComposeMessageForSenderFunc& composeMessageForSenderFunc,
     bool forceMulticast, const SendDataToLookupFunc& sendDataToLookupFunc,
     const SendDataToShardFunc& sendDataToShardFunc) {
@@ -297,7 +295,7 @@ bool DataSender::SendDataToOthers(
     if (indexB2 >= nodeToSendToLookUpLo && indexB2 < nodeToSendToLookUpHi) {
       LOG_GENERAL(INFO, "I will send data to the lookups");
       if (sendDataToLookupFunc) {
-        sendDataToLookupFunc(lookups, message);
+        sendDataToLookupFunc(message);
       }
     }
 
